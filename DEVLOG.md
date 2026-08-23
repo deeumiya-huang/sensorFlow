@@ -51,3 +51,13 @@ User initialized a git repo directly inside the `Assignment3` folder and saw 601
 
 **Claude's response summary:**
 Diagnosed the cause: the existing `.gitignore` had `/build` (anchored to repo root only), so it never matched `app/build/` or `wear/build/` — together contributing 578 + 547 build-output files, the bulk of the 601. The repo location was correct; this was a single-module-era `.gitignore` that hadn't been updated for the new `:wear` module. Fixed it by changing `/build` to `build` (unanchored, matches at any depth), which brought untracked files down to 54 legitimate source/config files. Confirmed the fix by re-running `git status`.
+
+---
+
+## Entry 6 — 2026-08-24
+
+**User prompt (translated/summarized):**
+User asked why the wear module's Kotlin source folder had a `.wear` suffix on the package name, recalling that Android Studio's own wizard normally keeps the phone and wear package/applicationId identical (`com.example.assignment3`) "so the app can receive data." User then asked Claude to make them match, and separately asked whether it's normal for `.idea/gradle.xml` to show up in git given `.idea/` is supposed to be gitignored.
+
+**Claude's response summary:**
+Clarified that Wearable Data Layer API communication is driven by paired-device node IDs and self-defined message paths, not by Kotlin package name or `applicationId` matching — that convention only matters for Play Store's embedded-wear-app bundling, which doesn't apply to local testing. Renamed the wear module's package from `com.example.assignment3.wear` to `com.example.assignment3` (moved source files, updated `namespace`/`applicationId` in `wear/build.gradle.kts`) to match the user's preference, verified with `gradlew :wear:assembleDebug` (build succeeded). Explained that Android Studio's default `.gitignore` intentionally tracks some `.idea/` files (e.g. `gradle.xml`, shared project-level settings) while ignoring user-specific ones (`workspace.xml`, caches) — not a bug — and offered to switch to ignoring all of `.idea/` if the user prefers the simpler approach for a solo project. Also confirmed the user's test setup going forward: a real phone + real watch paired over Bluetooth.

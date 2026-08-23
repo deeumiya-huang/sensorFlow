@@ -1,4 +1,4 @@
-package com.example.assignment3.wear
+package com.example.assignment3
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -10,7 +10,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
-import com.example.assignment3.wear.theme.Assignment3WearTheme
+import com.example.assignment3.theme.Assignment3WearTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {

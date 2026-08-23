@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.assignment3.wear"
+    namespace = "com.example.assignment3"
     compileSdk {
         version = release(37) {
             minorApiLevel = 1
@@ -12,7 +12,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.assignment3.wear"
+        applicationId = "com.example.assignment3"
         minSdk = 30
         targetSdk = 36
         versionCode = 1
