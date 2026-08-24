@@ -48,6 +48,8 @@ dependencies {
     implementation(libs.androidx.wear.compose.material)
     implementation(libs.androidx.wear.compose.foundation)
     implementation(libs.play.services.wearable)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.lifecycle.runtime.compose)
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)

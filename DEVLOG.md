@@ -61,3 +61,33 @@ User asked why the wear module's Kotlin source folder had a `.wear` suffix on th
 
 **Claude's response summary:**
 Clarified that Wearable Data Layer API communication is driven by paired-device node IDs and self-defined message paths, not by Kotlin package name or `applicationId` matching — that convention only matters for Play Store's embedded-wear-app bundling, which doesn't apply to local testing. Renamed the wear module's package from `com.example.assignment3.wear` to `com.example.assignment3` (moved source files, updated `namespace`/`applicationId` in `wear/build.gradle.kts`) to match the user's preference, verified with `gradlew :wear:assembleDebug` (build succeeded). Explained that Android Studio's default `.gitignore` intentionally tracks some `.idea/` files (e.g. `gradle.xml`, shared project-level settings) while ignoring user-specific ones (`workspace.xml`, caches) — not a bug — and offered to switch to ignoring all of `.idea/` if the user prefers the simpler approach for a solo project. Also confirmed the user's test setup going forward: a real phone + real watch paired over Bluetooth.
+
+---
+
+## Entry 7 — 2026-08-24
+
+**User prompt (translated/summarized):**
+User asked to ignore `.idea/` entirely in git rather than tracking select files. In the next message, the user asked to implement accelerometer/gyroscope collection, phrased as happening on the "phone side" three times — which contradicted the original watch-collects/phone-processes plan — and asked whether `SensorManager` is the right API, noting the next step will be wiring up the Data Layer API for transmission.
+
+**Claude's response summary:**
+Simplified `.gitignore` to a single `.idea` line and ran `git rm -r --cached .idea` to untrack the already-committed `.idea` files without deleting them from disk. Flagged the "phone side" wording as likely a typo for "watch side" given the original plan, confirmed with the user via AskUserQuestion, and proceeded with implementing sensor collection on the `:wear` module as originally planned. Built an MVVM data layer: `SensorReading`/`SensorReadingType` model, `SensorRepository` wrapping `SensorManager` with `callbackFlow` for accelerometer and gyroscope (`SENSOR_DELAY_GAME`, no extra permission needed at this rate), and `SensorViewModel` exposing a `StateFlow<SensorUiState>`; `MainActivity`/`WearApp` now renders live accelerometer and gyroscope values via `collectAsStateWithLifecycle`. Added `lifecycle-viewmodel-compose` and `lifecycle-runtime-compose` to the version catalog and `:wear` module; verified with `gradlew :wear:assembleDebug` (build succeeded). Data transmission to the phone via the Data Layer API is intentionally not yet implemented — that's the next step.
+
+---
+
+## Entry 8 — 2026-08-24
+
+**User prompt (translated/summarized):**
+User pasted a second-opinion code review from Gemini covering the wear-side sensor code, raising 5 points: (1) needs a Foreground Service since sensor collection is tied to Activity lifecycle, (2) `SENSOR_DELAY_GAME` is too high-frequency for direct Data Layer transmission, (3) `SensorRepository`'s per-collector listener registration should use `shareIn`, (4) `:app` is missing `play-services-wearable` and `applicationId` must match exactly for the Data Layer API to work, (5) silently calling `close()` when a sensor is unavailable hides the reason from the UI. User asked for Claude's opinion.
+
+**Claude's response summary:**
+Evaluated each point on technical merit: agreed directionally with 1, 2, 3, and 5 but corrected inaccuracies (SensorEventListener isn't actually tied to onPause/onStop, SENSOR_DELAY_GAME/50Hz isn't extreme, points 1/2/3/5 are good future work but not blocking today's milestone) — and flagged point 4's "applicationId must match" claim as factually wrong, contradicting the Data-Layer-doesn't-need-matching-package conclusion already established in [[Entry 6]]. Asked the user whether background (screen-off/wrist-down) detection is in scope; user was unsure since they don't want continuous monitoring but worried this conflicts with testing walk/shake while wearing the watch. Clarified that "app in foreground" only requires the screen/Activity to be active, not the user staring at it, and recommended skipping Foreground Service for now to keep scope aligned with the assignment's actual deliverable (classification + phone-watch transmission), deferring it (and the lighter-weight Ambient Mode alternative) to a stretch goal if time permits — mirroring the same priority the user already gave the watch UI.
+
+---
+
+## Entry 9 — 2026-08-24
+
+**User prompt (translated/summarized):**
+User pointed out a practical problem with the foreground-only plan: Wear OS screens dim/timeout after a few seconds of no interaction, and they can't be tapping the screen continuously during a live demo — asked whether the app still counts as "in foreground" then, and whether the phone can still receive data.
+
+**Claude's response summary:**
+Confirmed the concern is valid: once the screen times out without Ambient Mode support, the Activity typically goes to background and continued sensor/data delivery becomes unreliable and device-dependent — not safe to rely on for a demo. Rather than reversing the earlier decision to skip Foreground Service, applied a much lighter fix: `window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)` in `MainActivity.onCreate()` ([MainActivity.kt](wear/src/main/java/com/example/assignment3/MainActivity.kt)) so the watch screen stays on and the Activity stays foregrounded for as long as the demo screen is open, without touching the screen. Verified with `gradlew :wear:assembleDebug` (build succeeded).
