@@ -1,6 +1,7 @@
 package com.example.assignment3.sensor
 
 import android.content.Context
+import android.util.Log
 import com.example.assignment3.common.DataLayerPaths
 import com.example.assignment3.common.SensorBatchCodec
 import com.example.assignment3.common.SensorReadingType
@@ -23,9 +24,17 @@ class SensorReceiveRepository(context: Context) {
     val sensorBatches: Flow<SensorBatch> = callbackFlow {
         val listener = MessageClient.OnMessageReceivedListener { event ->
             val type = DataLayerPaths.typeForPath(event.path) ?: return@OnMessageReceivedListener
-            trySend(SensorBatch(type, SensorBatchCodec.decode(event.data)))
+            try {
+                trySend(SensorBatch(type, SensorBatchCodec.decode(event.data)))
+            } catch (e: Exception) {
+                Log.w(TAG, "Dropping malformed batch on ${event.path}", e)
+            }
         }
         messageClient.addListener(listener)
         awaitClose { messageClient.removeListener(listener) }
+    }
+
+    private companion object {
+        const val TAG = "SensorReceiveRepository"
     }
 }
