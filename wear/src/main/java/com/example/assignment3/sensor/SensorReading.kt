@@ -1,9 +1,7 @@
 package com.example.assignment3.sensor
 
-enum class SensorReadingType {
-    ACCELEROMETER,
-    GYROSCOPE
-}
+import com.example.assignment3.common.SensorReadingType
+import com.example.assignment3.common.SensorSample
 
 data class SensorReading(
     val type: SensorReadingType,
@@ -12,3 +10,5 @@ data class SensorReading(
     val z: Float,
     val timestampNanos: Long
 )
+
+fun SensorReading.toSample(): SensorSample = SensorSample(x, y, z, timestampNanos)

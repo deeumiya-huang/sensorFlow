@@ -5,20 +5,31 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import com.example.assignment3.common.SensorReadingType
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.shareIn
 
-class SensorRepository(context: Context) {
+/**
+ * [scope] backs the shared, hot sensor flows below (via [shareIn]) so that
+ * multiple collectors (live UI display, batching for transmission, ...) share
+ * a single SensorEventListener per sensor instead of each registering its own.
+ */
+class SensorRepository(context: Context, scope: CoroutineScope) {
 
     private val sensorManager =
         context.applicationContext.getSystemService(Context.SENSOR_SERVICE) as SensorManager
 
-    fun accelerometerReadings(): Flow<SensorReading> =
+    val accelerometer: Flow<SensorReading> =
         readingsFor(Sensor.TYPE_ACCELEROMETER, SensorReadingType.ACCELEROMETER)
+            .shareIn(scope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS))
 
-    fun gyroscopeReadings(): Flow<SensorReading> =
+    val gyroscope: Flow<SensorReading> =
         readingsFor(Sensor.TYPE_GYROSCOPE, SensorReadingType.GYROSCOPE)
+            .shareIn(scope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS))
 
     private fun readingsFor(sensorType: Int, readingType: SensorReadingType): Flow<SensorReading> =
         callbackFlow {
@@ -47,4 +58,8 @@ class SensorRepository(context: Context) {
             sensorManager.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_GAME)
             awaitClose { sensorManager.unregisterListener(listener) }
         }
+
+    private companion object {
+        const val STOP_TIMEOUT_MILLIS = 5_000L
+    }
 }

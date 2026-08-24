@@ -21,7 +21,6 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
 import com.example.assignment3.sensor.SensorReading
-import com.example.assignment3.sensor.SensorRepository
 import com.example.assignment3.sensor.SensorViewModel
 import com.example.assignment3.theme.Assignment3WearTheme
 
@@ -42,7 +41,7 @@ fun WearApp() {
     val context = LocalContext.current
     val viewModel: SensorViewModel = viewModel(
         factory = viewModelFactory {
-            initializer { SensorViewModel(SensorRepository(context)) }
+            initializer { SensorViewModel(context.applicationContext) }
         }
     )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()

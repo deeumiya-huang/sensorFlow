@@ -91,3 +91,13 @@ User pointed out a practical problem with the foreground-only plan: Wear OS scre
 
 **Claude's response summary:**
 Confirmed the concern is valid: once the screen times out without Ambient Mode support, the Activity typically goes to background and continued sensor/data delivery becomes unreliable and device-dependent — not safe to rely on for a demo. Rather than reversing the earlier decision to skip Foreground Service, applied a much lighter fix: `window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)` in `MainActivity.onCreate()` ([MainActivity.kt](wear/src/main/java/com/example/assignment3/MainActivity.kt)) so the watch screen stays on and the Activity stays foregrounded for as long as the demo screen is open, without touching the screen. Verified with `gradlew :wear:assembleDebug` (build succeeded).
+
+---
+
+## Entry 10 — 2026-08-24
+
+**User prompt (translated/summarized):**
+User asked Claude to implement phone-side reception of the watch's sensor data via the Wearable Data Layer API.
+
+**Claude's response summary:**
+Before implementing, flagged that the wire format for encoding/decoding sensor batches must stay identical on both ends, and asked whether to share that logic via a new `:common` pure-Kotlin module or duplicate it per module; user chose the `:common` module. Added `:common` (`SensorReadingType`, `SensorSample`, `DataLayerPaths`, `SensorBatchCodec` — a documented fixed-size `ByteBuffer` wire format) referenced by both `:wear` and `:app`. On `:wear`, converted `SensorRepository`'s flows to hot/shared (`shareIn`) since a second consumer now exists (addressing Gemini's earlier point 3), added `chunkedByTime` batching (500ms windows) and `SensorDataSender` (`MessageClient`/`NodeClient`, using `kotlinx-coroutines-play-services` for `.await()`), wired into `SensorViewModel`. On `:app`, added `SensorReceiveRepository` (a `callbackFlow` wrapping `MessageClient.OnMessageReceivedListener`) and a `SensorViewModel`/`SensorScreen` showing received batch/sample counts — mirroring `:wear`'s existing scope assumption that the listener is only registered while the app is in the foreground (no `WearableListenerService`), consistent with the earlier decision to skip background/Foreground-Service complexity for now. Also fixed a Gradle plugin resolution error (`org.jetbrains.kotlin.jvm` conflicting with the transitively-loaded Kotlin plugin classpath) by declaring it in the root `build.gradle.kts` alongside the other plugins. Verified with `gradlew :common:build :wear:assembleDebug :app:assembleDebug` (all three succeeded).
