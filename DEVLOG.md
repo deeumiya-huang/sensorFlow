@@ -348,6 +348,36 @@ Found the real cause: the earlier Dispatchers.Default fix ([[Entry 27]]) was onl
 
 ---
 
+## Entry 34 — 2026-08-27
+
+**User prompt (translated/summarized):**
+User confirmed the stall improved substantially after the wear-side dispatcher fix, then reported STATIC/TAP/SHAKE now feel almost perfectly detected live, but WALK is now almost always misclassified as SHAKE — asked Claude to improve WALK specifically without disturbing the other three.
+
+**Claude's response summary:**
+Rather than re-recording again, tried weighting the 14-dimension distance calculation to down-weight gyroscope relative to accelerometer, reasoning from the user's own observation that shake's and walk's *accelerometer* amplitudes look obviously different by eye — the earlier diagnosis ([[Entry 32]]) had already pinned the confusion on gyroscope spikes during natural arm swing. Swept gyro weight from 0.0-1.0 against three datasets: the calm-walk-only data ([[Entry 31]]) barely changed (already near-ceiling); the swingy-arm-swing-only data ([[Entry 32]]'s `calibration_log_v4.csv`) improved from 64.7% to 66.4% macro recall at weight 0.7 (WALK recall 73%→77%) with STATIC/TAP unchanged and SHAKE slightly better; the merged calm+swingy dataset got worse at every weight tested. Concluded a modest gyro weight (0.7) combined with centroids from the swingy-walk recording (not merged with the calm one) was the best evidence-based combination for the user's actual complaint, while being upfront it's a partial improvement (77%, not full accuracy) limited by having only one ~26-row swingy-walk sample. Updated `MotionClassifier` with the new means/stds/centroids and a `DIMENSION_WEIGHTS` array applied inside `distance()` ([MotionClassifier.kt](app/src/main/java/com/example/assignment3/sensor/MotionClassifier.kt)), documenting the reasoning in the class doc comment. Verified with `gradlew :app:assembleDebug` and installed to the phone via `adb install -r`.
+
+---
+
+## Entry 35 — 2026-08-27
+
+**User prompt (translated/summarized):**
+User reported WALK and SHAKE now looked exactly swapped (doing WALK showed SHAKE and vice versa) and suggested just swapping the labels back to fix it.
+
+**Claude's response summary:**
+Diagnosed this as a genuine data-magnitude inversion rather than a code bug: WALK had just been recalibrated with a fairly energetic swingy-arm sample, while SHAKE was still using [[Entry 31]]'s old, unusually mild recording (max jerk only ~1.8) — so SHAKE's centroid ended up numerically *smaller* than WALK's, an accident of which calibration sessions happened to be paired, not a mislabeling. Explained that swapping labels would be a band-aid that breaks the next time the user does a properly vigorous shake, and asked for a fresh, firm SHAKE re-recording instead (keeping WALK as-is). After the user re-recorded a genuinely vigorous SHAKE (accelerometer energy up to ~446), tried several combinations to restore balance: the new firm SHAKE alone badly hurt STATIC/TAP recall regardless of trimming its magnitude, traced first to WALK's oversized sample count (70 rows vs ~30 for other classes dominating the pooled mean/stdDev), then — after balancing sample counts still didn't fully fix it — to the true cause: pooling SHAKE's inherently much larger raw magnitude into the shared mean/stdDev compresses everyone else's z-scores together. Fixed it by computing `FEATURE_MEANS`/`FEATURE_STDS` from STATIC+TAP+WALK only, excluding SHAKE, then locating SHAKE's (now correctly far-outlying) centroid in that same normalized space — macro recall rose from ~73% to ~78% on held-out data, with STATIC/TAP/WALK barely disturbed; also confirmed no per-dimension gyro weighting was needed anymore once this fixed the normalization, so `DIMENSION_WEIGHTS` was removed and `distance()` reverted to plain unweighted Euclidean. Updated `MotionClassifier`'s constants and doc comment ([MotionClassifier.kt](app/src/main/java/com/example/assignment3/sensor/MotionClassifier.kt)) to reflect this approach and its remaining known weak spot (static/walk confusion during transition moments). Verified with `gradlew :app:assembleDebug` and installed to the phone via `adb install -r`.
+
+---
+
+## Entry 36 — 2026-08-27
+
+**User prompt (translated/summarized):**
+User reported WALK now detects correctly, but STATIC is now often misclassified as WALK — exactly the weak spot flagged in Entry 35's doc comment.
+
+**Claude's response summary:**
+Applied the same fix already used for tap/shake's "quiet warm-up" contamination: the WALK calibration recording (`calibration_log.csv` lines 322-391) started with a genuinely calm pre-walking segment (roughly lines 322-348) before real arm-swinging motion began around line 349, and that calm segment — labeled WALK in the calibration data — pulled the WALK centroid close enough to STATIC's territory to cause live confusion both ways. Rebuilt the dataset using only the energetic tail of that WALK recording (lines 366-391, the same slice already validated in [[Entry 34]]'s "v4"/"v10" experiments) combined with the SHAKE-excluded normalization from [[Entry 35]], pushing macro recall to 83.3% with all four classes landing between 78-94% recall (STATIC 80%, TAP 78%, SHAKE 94%, WALK 81%) — no class dominating at another's expense. Updated `MotionClassifier`'s `FEATURE_MEANS`/`FEATURE_STDS`/`CENTROIDS` and doc comment ([MotionClassifier.kt](app/src/main/java/com/example/assignment3/sensor/MotionClassifier.kt)). Verified with `gradlew :app:assembleDebug` and installed to the phone via `adb install -r`.
+
+---
+
 ## Entry 33 — 2026-08-27
 
 **User prompt (translated/summarized):**
