@@ -9,9 +9,10 @@ import kotlin.math.sqrt
  * magnitude sqrt(x^2+y^2+z^2) rather than raw axes, so results don't depend
  * on how the watch is worn/oriented.
  *
- * mean/stdDev/peakToPeak/zeroCrossingCount/energy are computed on a lightly
- * smoothed signal (denoise); maxJerk is computed on the raw, unsmoothed
- * signal since smoothing would blunt the sharp spike it's meant to detect.
+ * mean/stdDev/zeroCrossingCount/energy are computed on a lightly smoothed
+ * signal (denoise); peakToPeak and maxJerk are computed on the raw,
+ * unsmoothed signal since smoothing would blunt the sharp spike they're
+ * meant to detect (e.g. a tap).
  */
 object SensorFeatureExtractor {
 
@@ -51,7 +52,7 @@ object SensorFeatureExtractor {
             sampleCount = samples.size,
             mean = mean,
             stdDev = sqrt(variance),
-            peakToPeak = smoothed.max() - smoothed.min(),
+            peakToPeak = rawMagnitudes.max() - rawMagnitudes.min(),
             zeroCrossingCount = zeroCrossingCount,
             energy = smoothed.map { it * it }.average().toFloat(),
             maxJerk = maxJerk

@@ -6,17 +6,21 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -46,7 +50,7 @@ fun SensorScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val viewModel: SensorViewModel = viewModel(
         factory = viewModelFactory {
-            initializer { SensorViewModel(SensorReceiveRepository(context)) }
+            initializer { SensorViewModel(SensorReceiveRepository(context), context.applicationContext) }
         }
     )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -58,9 +62,30 @@ fun SensorScreen(modifier: Modifier = Modifier) {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
+        Text(
+            text = uiState.motionState.name,
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold
+        )
         Text(text = "Batches received: ${uiState.receivedBatchCount}")
 
         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+        Text(text = "Calibration recording")
+        val recordingLabel = uiState.recordingLabel
+        if (recordingLabel == null) {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                for (label in listOf("STATIC", "TAP", "SHAKE", "WALK")) {
+                    Button(onClick = { viewModel.startRecording(label) }) {
+                        Text(text = label)
+                    }
+                }
+            }
+        } else {
+            Text(text = "Recording $recordingLabel... (${uiState.recordedRowCount} rows)")
+            Button(onClick = { viewModel.stopRecording() }) {
+                Text(text = "Stop")
+            }
+        }
         Text(text = "Accelerometer")
         FeatureList(uiState.accelerometerFeatures)
 

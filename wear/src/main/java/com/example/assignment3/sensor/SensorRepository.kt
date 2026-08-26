@@ -55,11 +55,17 @@ class SensorRepository(context: Context, scope: CoroutineScope) {
                 override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) = Unit
             }
 
-            sensorManager.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_GAME)
+            sensorManager.registerListener(listener, sensor, SAMPLING_PERIOD_US)
             awaitClose { sensorManager.unregisterListener(listener) }
         }
 
     private companion object {
         const val STOP_TIMEOUT_MILLIS = 5_000L
+
+        // 100Hz (up from SENSOR_DELAY_GAME's ~50Hz): a tap's impact is a very
+        // brief transient, and 50Hz was too coarse to reliably land a sample
+        // near its true peak. Stays under 200Hz, so no
+        // HIGH_SAMPLING_RATE_SENSORS permission is needed.
+        const val SAMPLING_PERIOD_US = 10_000
     }
 }
