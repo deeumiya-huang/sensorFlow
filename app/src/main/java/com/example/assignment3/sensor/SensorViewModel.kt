@@ -4,17 +4,25 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.assignment3.common.SensorReadingType
+import com.example.assignment3.common.SensorSample
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlin.math.sqrt
 
 data class PhoneSensorUiState(
     val receivedBatchCount: Int = 0,
     val accelerometerFeatures: SensorFeatures? = null,
     val gyroscopeFeatures: SensorFeatures? = null,
+    val accelerometerMagnitudeHistory: List<Float> = emptyList(),
+    val accelerometerSmoothedHistory: List<Float> = emptyList(),
+    val gyroscopeMagnitudeHistory: List<Float> = emptyList(),
+    val gyroscopeSmoothedHistory: List<Float> = emptyList(),
     val motionState: MotionState = MotionState.UNKNOWN,
+    val isStalled: Boolean = false,
     val recordingLabel: String? = null,
     val recordedRowCount: Int = 0
 )
@@ -32,25 +40,42 @@ class SensorViewModel(
 
     private var sessionId = 0
     private val pendingRows = mutableListOf<CalibrationRow>()
+    private var lastBatchAtMillis = System.currentTimeMillis()
 
     init {
-        viewModelScope.launch {
+        // Runs on Dispatchers.Default, not the main thread: at 100Hz this
+        // fires up to ~200 times/sec combined across both sensors, and must
+        // never compete with Compose recomposition (chart redraws, the
+        // pixel-art animation) for the main thread — if it did, a UI frame
+        // running long would delay draining incoming data, and the backlog
+        // would compound worse the longer the app runs instead of settling.
+        viewModelScope.launch(Dispatchers.Default) {
             repository.sensorBatches.collect { batch ->
+                lastBatchAtMillis = System.currentTimeMillis()
                 val current = _uiState.value
                 val updated = when (batch.type) {
-                    SensorReadingType.ACCELEROMETER -> current.copy(
-                        receivedBatchCount = current.receivedBatchCount + 1,
-                        accelerometerFeatures = SensorFeatureExtractor.extract(
-                            accelerometerWindow.addAll(batch.samples),
-                            GRAVITY_BASELINE
+                    SensorReadingType.ACCELEROMETER -> {
+                        val windowed = accelerometerWindow.addAll(batch.samples)
+                        val magnitudes = magnitudesOf(windowed)
+                        current.copy(
+                            receivedBatchCount = current.receivedBatchCount + 1,
+                            accelerometerFeatures = SensorFeatureExtractor.extract(windowed, GRAVITY_BASELINE),
+                            accelerometerMagnitudeHistory = magnitudes,
+                            accelerometerSmoothedHistory = SensorFeatureExtractor.smooth(magnitudes),
+                            isStalled = false
                         )
-                    )
-                    SensorReadingType.GYROSCOPE -> current.copy(
-                        receivedBatchCount = current.receivedBatchCount + 1,
-                        gyroscopeFeatures = SensorFeatureExtractor.extract(
-                            gyroscopeWindow.addAll(batch.samples)
+                    }
+                    SensorReadingType.GYROSCOPE -> {
+                        val windowed = gyroscopeWindow.addAll(batch.samples)
+                        val magnitudes = magnitudesOf(windowed)
+                        current.copy(
+                            receivedBatchCount = current.receivedBatchCount + 1,
+                            gyroscopeFeatures = SensorFeatureExtractor.extract(windowed),
+                            gyroscopeMagnitudeHistory = magnitudes,
+                            gyroscopeSmoothedHistory = SensorFeatureExtractor.smooth(magnitudes),
+                            isStalled = false
                         )
-                    )
+                    }
                 }
 
                 val latestFeatures = when (batch.type) {
@@ -69,6 +94,18 @@ class SensorViewModel(
                     ),
                     recordedRowCount = pendingRows.size
                 )
+            }
+        }
+
+        // No batch-arrival event fires while the transport is stalled, so a
+        // separate ticker is needed to notice the silence and surface it.
+        viewModelScope.launch(Dispatchers.Default) {
+            while (true) {
+                delay(STALL_CHECK_INTERVAL_MILLIS)
+                val stalled = System.currentTimeMillis() - lastBatchAtMillis > STALL_THRESHOLD_MILLIS
+                if (stalled != _uiState.value.isStalled) {
+                    _uiState.value = _uiState.value.copy(isStalled = stalled)
+                }
             }
         }
     }
@@ -90,10 +127,15 @@ class SensorViewModel(
         }
     }
 
-    private companion object {
+    private fun magnitudesOf(samples: List<SensorSample>): List<Float> =
+        samples.map { sqrt(it.x * it.x + it.y * it.y + it.z * it.z) }
+
+    companion object {
         const val WINDOW_NANOS = 2_000_000_000L
-        const val GRAVITY_BASELINE = 9.80665f
-        const val MAX_ACCELEROMETER_MAGNITUDE = 196.2f
-        const val MAX_GYROSCOPE_MAGNITUDE = 34.9f
+        private const val GRAVITY_BASELINE = 9.80665f
+        private const val MAX_ACCELEROMETER_MAGNITUDE = 196.2f
+        private const val MAX_GYROSCOPE_MAGNITUDE = 34.9f
+        private const val STALL_CHECK_INTERVAL_MILLIS = 500L
+        private const val STALL_THRESHOLD_MILLIS = 1500L
     }
 }

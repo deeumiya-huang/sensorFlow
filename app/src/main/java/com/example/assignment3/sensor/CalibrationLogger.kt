@@ -20,7 +20,7 @@ data class CalibrationRow(
 object CalibrationLogger {
     const val FILE_NAME = "calibration_log.csv"
     private const val HEADER =
-        "sessionId,label,sensorType,sampleCount,mean,stdDev,peakToPeak,zeroCrossing,energy,maxJerk"
+        "sessionId,label,sensorType,sampleCount,mean,stdDev,peakToPeak,zeroCrossing,energy,maxJerk,crossingIntervalCv"
 
     fun append(context: Context, rows: List<CalibrationRow>) {
         if (rows.isEmpty()) return
@@ -35,7 +35,7 @@ object CalibrationLogger {
                         listOf(
                             row.sessionId, row.label, row.sensorType,
                             f.sampleCount, f.mean, f.stdDev, f.peakToPeak,
-                            f.zeroCrossingCount, f.energy, f.maxJerk
+                            f.zeroCrossingCount, f.energy, f.maxJerk, f.crossingIntervalCv
                         ).joinToString(",")
                     )
                 }

@@ -211,3 +211,147 @@ User reported v3 was still failing live: tap undetected, shake/walk indiscernibl
 
 **Claude's response summary:**
 Raised `:wear`'s sensor registration from `SENSOR_DELAY_GAME` (~50Hz) to a custom 100Hz sampling period ([SensorRepository.kt](wear/src/main/java/com/example/assignment3/sensor/SensorRepository.kt)), deliberately staying under 200Hz to avoid needing the `HIGH_SAMPLING_RATE_SENSORS` permission — confirmed by the user's next test as fixing tap detection. Diagnosed the new stall-then-burst symptom as likely stemming from `SensorDataSender.send()` re-querying `nodeClient.connectedNodes` via a fresh Play Services IPC call on every single batch send (every ~250ms combined across both sensors) — redundant since the connected node rarely changes mid-session — and fixed it by caching the node list with a 10-second TTL, invalidated on send failure ([SensorDataSender.kt](wear/src/main/java/com/example/assignment3/sensor/SensorDataSender.kt)). Reassured the user that because `RollingSampleWindow` windows by each sample's own sensor timestamp (not arrival time), a transport stall doesn't corrupt feature correctness — only adds display latency — meaning the reported shake/walk inconsistency is plausibly the same stall making live tests sometimes land during a stale-data window rather than a classifier accuracy regression. Verified with `gradlew :wear:assembleDebug` and installed to the watch via `adb install -r` (after the watch's wireless adb connection dropped and the user reconnected it). Awaiting the user's retest to confirm whether the stall is resolved or is an inherent Wear OS/Bluetooth power-management characteristic of continuous MessageClient streaming at this data rate (as flagged as a risk back in [[Entry 8]]).
+
+---
+
+## Entry 22 — 2026-08-24
+
+**User prompt (translated/summarized):**
+User asked to start phone-side data visualization: a pastel macaron mint-to-pink gradient background, cute pixel-art animations for the four motion states (asked Claude to find/fetch them, or say where to get them), and accelerometer/gyroscope charts below.
+
+**Claude's response summary:**
+Declined to download pixel-art assets from the web directly (unknown licensing/provenance), and instead pointed the user to legitimate free/CC0 sources (Kenney.nl, itch.io, OpenGameArt.org) to pick a sprite sheet themselves, or offered to hand-draw simple pixel-style animations directly in Compose `Canvas` with no external assets at all — awaiting the user's choice before building the animation piece. Proceeded with the two already-agreed, unambiguous parts: added a `BoundedFloatHistory` ([BoundedFloatHistory.kt](app/src/main/java/com/example/assignment3/sensor/BoundedFloatHistory.kt)) fixed-capacity buffer feeding a 300-point rolling magnitude history per sensor into `SensorViewModel`/`PhoneSensorUiState`, and built `MainActivity`'s `SensorScreen` with a `Brush.verticalGradient` mint-to-pink background and a `Canvas`-based scrolling `MagnitudeChart` composable (no chart library, consistent with the earlier decision in [[Entry 16]]) rendered above each sensor's existing feature readout. Verified with `gradlew :app:assembleDebug` and installed to the phone via `adb install -r`.
+
+---
+
+## Entry 23 — 2026-08-24
+
+**User prompt (translated/summarized):**
+User asked Claude to draw the pixel-art motion animations directly (choosing that option over sourcing external sprite sheets), and asked for them to be cute.
+
+**Claude's response summary:**
+Built a single hand-drawn pixel "bean" character ([MotionPixelArt.kt](app/src/main/java/com/example/assignment3/ui/MotionPixelArt.kt)) — a 12x12 grid computed programmatically as a filled circle (avoiding hand-typed ASCII-art alignment errors) with an outline, cream body, dark dot eyes, and pink cheeks — reused across all four `MotionState`s; personality comes from motion, not redrawn frames: a `rememberInfiniteTransition`-driven `graphicsLayer` transform gives each state its own feel (STATIC: slow gentle breathing scale; TAP: fast squash-and-stretch jelly bounce; SHAKE: quick rotation wobble; WALK: horizontal sway + bob with a synced tilt). Wired into `SensorScreen`, centered above the motion-state label. Verified with `gradlew :app:assembleDebug` and installed to the phone via `adb install -r`.
+
+---
+
+## Entry 24 — 2026-08-24
+
+**User prompt (translated/summarized):**
+User asked for four things: show a "Receiving data..." indicator when batches stall, hide the calibration-recording controls and raw feature-number readout from the screen (without deleting the underlying files/code, since more calibration may still happen), add unit/time labels to the charts, and asked whether the chart's currently displayed span is exactly the same window used to compute the averages, or wider.
+
+**Claude's response summary:**
+Added stall detection to `SensorViewModel`: a periodic 500ms ticker (needed since no batch-arrival event fires during a stall) compares elapsed time since the last received batch against a 1.5s threshold and flips `PhoneSensorUiState.isStalled`, shown in `MainActivity` as a "Receiving data..." message. Removed the calibration-recording buttons/status and the raw `FeatureList` numeric readout from `SensorScreen`'s visible layout, leaving `CalibrationLogger.kt` and `SensorViewModel`'s `startRecording`/`stopRecording` untouched. On the window question: confirmed the chart's `BoundedFloatHistory` buffer (300 points, sized before the sampling-rate change) did NOT exactly match the 2-second feature-averaging window — deleted that separate buffer entirely and instead derived the chart data directly from the same windowed sample list `RollingSampleWindow.addAll()` returns to `SensorFeatureExtractor.extract()`, so the chart is now provably the same window as the averages, not coincidentally close. Added unit + time-span labels to both charts (`"m/s² · last 2.0s"` / `"rad/s · last 2.0s"`, derived from `SensorViewModel.WINDOW_NANOS`). Verified with `gradlew :app:assembleDebug` and installed to the phone via `adb install -r`.
+
+---
+
+## Entry 25 — 2026-08-24
+
+**User prompt (translated/summarized):**
+Live investigation with the user of the "stall" symptom while Android Studio was open: cleared logcat on both devices, had the user reproduce the stall, then pulled and analyzed both logs. Found the real cause had nothing to do with the app's own code — `ActivityManager: Force stopping com.example.assignment3 ... from pid 9965` correlated with `studio.deploy: Received request 'overlayinstall'`, meaning Android Studio's own live-deploy tooling was repeatedly force-killing and redeploying the wear app (4 times in about a minute), which is what looked like "batches stall then jump." User then asked whether closing Android Studio would break the phone-watch pairing.
+
+**Claude's response summary:**
+Confirmed the phone-watch Bluetooth/Wear-OS-companion pairing and the Data Layer API connection between the two installed apps are entirely independent of Android Studio — only the wireless ADB debug connection (used for installing/logcat) goes away when Studio closes, and the already-installed apps keep working normally. Recommended stopping the `:wear` run/debug session (or closing Android Studio entirely) before testing. This retroactively means the sampling-rate bump, node-caching fix, and Doze/BLE-power-management hypotheses from [[Entry 20]] and [[Entry 21]] were solving a problem that was actually a development-environment artifact, not a real runtime characteristic — though the 100Hz rate change and node caching remain reasonable improvements in their own right.
+
+---
+
+## Entry 26 — 2026-08-24
+
+**User prompt (translated/summarized):**
+After closing Android Studio and retesting, user asked three things: does the current design replay a backlog in order when a stall recovers; is the chart showing raw or smoothed data, and can both be shown together (raw faint, smoothed bold) — how is this normally presented; and why does static's waveform look just as jagged/spiky as shake's — is that a real latency mismatch between the chart and the state label above it, or normal?
+
+**Claude's response summary:**
+Explained backlogged batches are processed strictly in arrival order but so cheaply (microseconds each) that a human wouldn't perceive intermediate stale states — the UI effectively jumps to the caught-up state — and that `RollingSampleWindow`'s timestamp-based (not arrival-time-based) eviction guarantees the window correctly converges to "the real latest 2 seconds" regardless of backlog size. Confirmed the chart was raw-only, then added a smoothed overlay: exposed `SensorFeatureExtractor`'s internal moving-average as a public `smooth()` function, had `SensorViewModel` compute both raw and smoothed magnitude series from the same windowed samples, and updated `MagnitudeChart` in `MainActivity.kt` to draw both (faint raw line underneath, bold smoothed line — the one the classifier actually uses — on top). Diagnosed the "static looks just as jagged" complaint as a charting bug, not a latency issue: the chart auto-scaled its Y-axis to the current window's own min/max, which stretches whatever noise is present (however tiny) to fill the full chart height, making every state look equally "spiky" regardless of true amplitude — fixed by switching to a fixed Y-axis range per chart (0-45 m/s² accelerometer, 0-16 rad/s gyroscope, sized from observed calibration data) so real amplitude differences between states are finally visible. Confirmed chart and motion-state label are computed from the same atomic state update, so no architectural lag exists between them.
+
+---
+
+## Entry 27 — 2026-08-24
+
+**User prompt (translated/summarized):**
+User reported the "Receiving data..." indicator from [[Entry 24]] had stopped appearing, and — more seriously — that live latency between performing an action (e.g. shake) and seeing it reflected on screen was not the expected ~2s window but 15-20 seconds, and grew worse the longer the app had been running.
+
+**Claude's response summary:**
+Diagnosed both symptoms as the same root cause: at 100Hz combined across both sensors (~200 events/sec), the previous entry's additions (dual-line chart redraws, the continuously-animating pixel art) made Compose recomposition expensive enough to compete with the `SensorViewModel`'s data-processing coroutine for the main thread (`viewModelScope.launch` defaults to `Dispatchers.Main.immediate`) — when a frame ran long, incoming-data processing fell behind, and since falling further behind only means more state updates (each still triggering expensive recomposition) queue up, the backlog compounds and grows monotonically with runtime, exactly matching the reported symptom. This same mechanism explained the missing stall indicator: `isStalled` only measures whether *some* batch was recently processed, not whether the data it carries is fresh, so a continuously-flowing-but-increasingly-stale backlog never trips the "stalled" check even while real-world freshness lags further behind by the second. Fixed by moving both the sensor-batch-processing collector and the stall-check ticker in `SensorViewModel` onto `Dispatchers.Default` ([SensorViewModel.kt](app/src/main/java/com/example/assignment3/sensor/SensorViewModel.kt)), decoupling data ingestion from UI rendering so a slow frame can no longer starve data processing. Verified with `gradlew :app:assembleDebug`; user is installing this build themselves and will report whether the compounding delay is resolved.
+
+---
+
+## Entry 28 — 2026-08-24
+
+**User prompt (translated/summarized):**
+User reported that even standing completely still, the app cycled through various states for ~20 seconds before finally settling on STATIC, and asked whether this was leftover backlog data or a threshold/detection problem, offered to re-record calibration data, and asked Claude to restore the recording buttons to the screen first.
+
+**Claude's response summary:**
+Identified a real, previously-unnoticed bug: `MotionClassifier`'s centroids/means/stds (from [[Entry 20]]) were derived from calibration data recorded *before* the sampling rate was raised from 50Hz to 100Hz in [[Entry 19]] — meaning the classifier has been running on stale, rate-mismatched calibration ever since, since features like `maxJerk`/`zeroCrossing`/`energy` are inherently sensitive to sample spacing. This alone would cause systematic misclassification independent of any backlog, and likely explains more of the "sometimes right, sometimes wrong" behavior from recent entries than the backlog issue does. Restored the calibration-recording buttons/status to `SensorScreen` in `MainActivity.kt` (the underlying `SensorViewModel` recording logic was never removed). Verified with `gradlew :app:assembleDebug`. Next: user will re-record all four states at the current 100Hz rate so Claude can rebuild `MotionClassifier`'s calibration from data that actually matches the current sampling rate.
+
+---
+
+## Entry 29 — 2026-08-24
+
+**User prompt (translated/summarized):**
+User pasted a Gemini review of the "growing delay" investigation, proposing: watch-side `sender.send().await()` blocking causes compounding delay if a single send exceeds 500ms; edge-computing tap detection on the watch (send only a tiny "tapped" signal instead of raw samples); feature-downsampling (send computed stats instead of raw data); merging accel+gyro into one message; and fire-and-forget non-blocking sends. Asked for Claude's opinion and whether to move to watch-side processing first.
+
+**Claude's response summary:**
+Corrected the "why delay grows" theory using actual evidence rather than plausible-sounding speculation: the two real incidents already diagnosed (Android Studio's redeploy tooling in [[Entry 25]], phone-side main-thread contention in [[Entry 27]]) had nothing to do with watch-side send-blocking, even though the described mechanism is structurally real in the code. Rejected edge-computation and feature-downsampling as disproportionate, unconfirmed-need rewrites that would break the raw-waveform chart feature (raw samples would stop being transmitted) and duplicate feature-extraction logic across modules. Declined merging accel+gyro messages, consistent with the earlier reasoned decision in [[Entry 16]]. Endorsed only the non-blocking-send idea, but in a bounded form (skip a batch if a send is already in flight, rather than launching unbounded concurrent sends) to avoid worsening congestion under sustained network trouble. User deferred this change until after calibration is finished.
+
+**User prompt (2, translated/summarized):**
+User confirmed and asked Claude to delete the stale calibration log file, then said they'd record fresh data before implementing the deferred fix. After finishing all four recordings, said "done."
+
+**Claude's response summary:**
+Deleted `/storage/emulated/0/Android/data/com.example.assignment3/files/calibration_log.csv` via `adb shell rm` and confirmed the directory was empty. Pulled the fresh 100Hz calibration CSV and found TAP was again barely distinguishable from static noise (maxJerk ~0.1-0.14, matching static's settled baseline) and WALK escalated partway through into implausibly extreme values (mean climbing past 20 m/s², energy to 536, exceeding even the SHAKE session) — asked the user to re-record just those two, keeping the good STATIC and SHAKE sessions.
+
+**User prompt (3, translated/summarized):**
+User re-recorded TAP and WALK, then asked why the previous TAP (which they felt they'd tapped hard for) and WALK (which they felt they'd walked slowly for) didn't show that in the data — asked whether the watch's sensor might be faulty.
+
+**Claude's response summary:**
+Pulled the new recording before answering rather than speculating. New TAP showed a clear, strong signal (maxJerk peaking at ~12.9, a believable escalate-then-fade shape) — proof the sensor itself works fine; explained the earlier weak readings as ordinary human inconsistency in applied tap force, not a hardware fault. New WALK was far more reasonable than the previous escalating-to-extreme attempt, though still elevated throughout (maxJerk 9-56) despite feeling "slow" to the user — attributed to 100Hz sampling now resolving each footstep's heel-strike impact more sharply than 50Hz did, i.e. this may just be what normal walking legitimately looks like at the new rate, not a bad recording. Built a cleaned dataset (STATIC + SHAKE from the first good recording, the new TAP + WALK) and reran the nearest-centroid evaluation, improving macro recall from 61% (stale 50Hz-derived calibration) to 69%, with STATIC now perfectly classified (42/42). Updated `MotionClassifier`'s `FEATURE_MEANS`/`FEATURE_STDS`/`CENTROIDS` and doc comment with the new 100Hz-calibrated values ([MotionClassifier.kt](app/src/main/java/com/example/assignment3/sensor/MotionClassifier.kt)). Verified with `gradlew :app:assembleDebug`; awaiting the user's live retest.
+
+---
+
+## Entry 30 — 2026-08-24
+
+**User prompt (translated/summarized):**
+User confirmed stalling improved after closing Android Studio's run session (confirming [[Entry 25]]'s diagnosis was the same recurring cause), then asked Claude to add the previously-discussed periodicity/regularity feature to improve walk/shake accuracy. Before that, flagged that TAP was now often misclassified as SHAKE, which hadn't happened before.
+
+**Claude's response summary:**
+Explained the tap→shake confusion as a known, physically-grounded overlap rather than a regression: a firm tap's post-impact "ring-down" oscillation genuinely resembles a brief shake, and the TAP centroid averages across the calibration recording's full range of tap forces (light to hard), so a live tap harder than that average can drift toward the SHAKE centroid. Flagged that the requested regularity feature targets the walk/shake confusion specifically and likely won't help tap/shake, which is a separate, harder overlap. Implemented `crossingIntervalCv` (coefficient of variation of the gaps between baseline crossings — low means evenly spaced like a walking cadence, high means erratic like a shake) in `SensorFeatureExtractor` (now tracks crossing indices, not just a count) and added it to `SensorFeatures` ([SensorFeatures.kt](app/src/main/java/com/example/assignment3/sensor/SensorFeatures.kt), [SensorFeatureExtractor.kt](app/src/main/java/com/example/assignment3/sensor/SensorFeatureExtractor.kt)) and the calibration CSV schema ([CalibrationLogger.kt](app/src/main/java/com/example/assignment3/sensor/CalibrationLogger.kt)). Flagged that the CSV logger only stores already-computed features, not raw samples, so this new feature has no historical data — all four states need re-recording from scratch, and the old CSV must be deleted first since its column count no longer matches. `MotionClassifier` left untouched (still 12-dim) pending fresh calibration data to compute the 14-dim means/stds/centroids. Verified with `gradlew :app:assembleDebug`; no device connected to install/pull directly this turn, so the user will install and record themselves.
+
+---
+
+## Entry 31 — 2026-08-24
+
+**User prompt (translated/summarized):**
+User finished re-recording all four states after installing the `crossingIntervalCv` build.
+
+**Claude's response summary:**
+Pulled the CSV and found the user hadn't deleted the old file first, so it contained a schema mix (old 10-column rows from earlier sessions, new 11-column rows with `crossingIntervalCv` from this fresh full re-record) — worked around it by slicing out only the new-schema block (the four freshly re-recorded sessions) rather than asking for another re-record. Built a 14-dimension nearest-centroid evaluation (`evaluate_centroid_v2.py`) and got 73.1% macro recall (up from 69%): WALK jumped from 68% to 97% recall thanks to the new feature, but SHAKE dropped to 30% (confused mostly with STATIC) — attributed to this particular SHAKE recording being noticeably gentler than earlier ones (raw maxJerk topped out at just 1.8, versus double digits in prior sessions) rather than a flaw in the new feature, since the net macro recall still improved. Updated `MotionClassifier`'s `FEATURE_MEANS`/`FEATURE_STDS`/`CENTROIDS` to the 14-dim values and rewrote the doc comment's calibration history ([MotionClassifier.kt](app/src/main/java/com/example/assignment3/sensor/MotionClassifier.kt)). Verified with `gradlew :app:assembleDebug` and installed to the phone via `adb install -r`.
+
+---
+
+## Entry 32 — 2026-08-27
+
+**User prompt (translated/summarized):**
+User reported the app going crazy for ~20s after a fresh install before settling to STATIC, with everything afterward badly delayed; Android Studio was confirmed open again (same recurring cause). User then asked how to keep Android Studio open during a future demo without it interfering, and separately reported WALK was now often misclassified as SHAKE despite the waveforms looking obviously different by eye.
+
+**Claude's response summary:**
+Explained the fix isn't closing Android Studio entirely but ensuring no active Run/Debug session is attached to the watch (stop it via the red square button after the last deploy) — merely having the IDE open with no attached session doesn't trigger `studio.deploy`. For the WALK→SHAKE confusion, computed the actual z-normalized distance math by hand against both centroids using a fresh recording: confirmed the calm opening portion of a walk correctly sat closer to WALK, but a later portion with natural arm swing sat closer to SHAKE — and pinpointed the dominant contributor as the *gyroscope* mean/energy spiking during arm swing (the accelerometer amplitude the user was visually judging wasn't actually the deciding factor). Attributed this to the WALK calibration sample never having captured natural arm-swing gyro ranges. Asked for a richer WALK re-recording with natural arm swing.
+
+**User prompt (2, translated/summarized):**
+User re-recorded WALK with more natural arm swing.
+
+**Claude's response summary:**
+Tried two approaches and both underperformed the currently-deployed classifier: merging the new swingier WALK data with the original calm recording dropped macro recall to 58.5% (WALK's centroid became too smeared, causing new STATIC/TAP→WALK confusion), and replacing the calm recording entirely with just the new swingier one dropped it to 64.7% (WALK recall itself fell from 97% to 73%, and SHAKE recall fell further). Recommended keeping the currently-deployed 73.1%-macro-recall classifier (calm-walk-only) unchanged and accepting the arm-swing-during-walk misclassification as a known, documented limitation rather than chasing it further with more calibration data alone — flagged that fixing it properly would need a more substantial change (e.g. down-weighting gyroscope features in the distance metric), not just more recordings.
+
+**User prompt (3, translated/summarized):**
+User reported "Receiving data..." stalling again, this time with Android Studio confirmed already closed, and asked what was actually stuck given the earlier fix had moved processing to a background dispatcher.
+
+**Claude's response summary:**
+Found the real cause: the earlier Dispatchers.Default fix ([[Entry 27]]) was only ever applied to the *phone-side* `SensorViewModel` — the *wear-side* `SensorViewModel` still ran all four of its coroutines (live-reading display for both sensors, plus the batching+send pipeline for both sensors) on the default main dispatcher, unfixed. At 100Hz, the live-reading collectors update the watch's on-screen display ~100 times/sec per sensor, competing directly with the batching/send coroutines (which do actual Bluetooth I/O) for the watch's own main thread — the exact same architecture bug as the phone-side one, just never ported to the watch, and entirely unrelated to Android Studio. Fixed by moving all four `viewModelScope.launch` calls in `:wear`'s `SensorViewModel` ([SensorViewModel.kt](wear/src/main/java/com/example/assignment3/sensor/SensorViewModel.kt)) onto `Dispatchers.Default`. Verified with `gradlew :wear:assembleDebug` and installed to the watch via `adb install -r`.
+
+---
+
+## Entry 33 — 2026-08-27
+
+**User prompt (translated/summarized):**
+User reported the watch's own on-screen numbers updating very fast after re-running `:wear` from Android Studio, asking whether the fix hadn't worked. Claude clarified fast-updating watch numbers are expected at 100Hz and unrelated to the threading fix, and flagged that re-running from Android Studio re-attaches a live session that should be explicitly stopped before testing. User stopped the session but still saw "Receiving data..." stalling on the phone.
+
+**Claude's response summary:**
+With all three previously-confirmed causes (Android Studio redeploys, phone-side and watch-side main-thread contention) ruled out or already fixed, captured fresh logcat from both devices during a live reproduction rather than guessing a fourth cause. This round came back clean — no force-stops, no ANR, no crashes, no errors on either device, and essentially no Wearable/MessageClient-related log activity on the phone (though that subsystem may simply not log routine activity verbosely, so this isn't conclusive either way). Concluded this is most plausibly genuine intermittent Bluetooth/Data-Layer transport slowness rather than a remaining code bug, and revisited the send-path hardening that Gemini had proposed and the user had deferred until after calibration ([[Entry 29]]). Implemented the bounded, non-blocking version discussed then (not full unbounded fire-and-forget): `SensorViewModel`'s batching collectors now fire `sender.send()` as a child coroutine guarded by a `Mutex.tryLock()` per sensor, so a slow send can't hold up picking up the next batch, and a new batch is dropped (not queued concurrently) if the previous send for that sensor hasn't finished yet ([SensorViewModel.kt](wear/src/main/java/com/example/assignment3/sensor/SensorViewModel.kt)). Verified with `gradlew :wear:assembleDebug` and installed to the watch via `adb install -r`.
