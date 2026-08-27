@@ -36,6 +36,7 @@ class SensorViewModel(
 
     private val accelerometerWindow = RollingSampleWindow(WINDOW_NANOS, MAX_ACCELEROMETER_MAGNITUDE)
     private val gyroscopeWindow = RollingSampleWindow(WINDOW_NANOS, MAX_GYROSCOPE_MAGNITUDE)
+    private val motionStateSender = MotionStateSender(appContext)
 
     private val _uiState = MutableStateFlow(PhoneSensorUiState())
     val uiState: StateFlow<PhoneSensorUiState> = _uiState.asStateFlow()
@@ -43,6 +44,32 @@ class SensorViewModel(
     private var sessionId = 0
     private val pendingRows = mutableListOf<CalibrationRow>()
     private var lastBatchAtMillis = System.currentTimeMillis()
+
+    // A raw per-batch classification flickers whenever features sit near a
+    // class boundary (e.g. STATIC/WALK during a transition). Only committing
+    // a new displayed state once it has repeated STABLE_STREAK_REQUIRED times
+    // in a row filters that flicker out without touching the classifier
+    // itself — a single stray reading can no longer flip the label.
+    private var pendingMotionState: MotionState? = null
+    private var pendingMotionStreak: Int = 0
+
+    private fun stabilizedMotionState(rawState: MotionState, displayedState: MotionState): MotionState {
+        if (rawState == displayedState) {
+            pendingMotionState = null
+            pendingMotionStreak = 0
+            return displayedState
+        }
+        if (rawState == pendingMotionState) {
+            pendingMotionStreak++
+        } else {
+            pendingMotionState = rawState
+            pendingMotionStreak = 1
+        }
+        if (pendingMotionStreak < STABLE_STREAK_REQUIRED) return displayedState
+        pendingMotionState = null
+        pendingMotionStreak = 0
+        return rawState
+    }
 
     init {
         // Runs on Dispatchers.Default, not the main thread: at 100Hz this
@@ -89,11 +116,19 @@ class SensorViewModel(
                     pendingRows.add(CalibrationRow(sessionId, label, batch.type, latestFeatures))
                 }
 
+                val rawMotionState = MotionClassifier.classify(
+                    updated.accelerometerFeatures,
+                    updated.gyroscopeFeatures
+                )
+                val stableMotionState = stabilizedMotionState(rawMotionState, current.motionState)
+                if (stableMotionState != current.motionState) {
+                    // Only pushed to the watch on an actual change, not every
+                    // batch — the watch doesn't need a running commentary,
+                    // just to know when the displayed state flips.
+                    launch(Dispatchers.Default) { motionStateSender.send(stableMotionState) }
+                }
                 _uiState.value = updated.copy(
-                    motionState = MotionClassifier.classify(
-                        updated.accelerometerFeatures,
-                        updated.gyroscopeFeatures
-                    ),
+                    motionState = stableMotionState,
                     recordedRowCount = pendingRows.size
                 )
             }
@@ -139,5 +174,6 @@ class SensorViewModel(
         private const val MAX_GYROSCOPE_MAGNITUDE = 34.9f
         private const val STALL_CHECK_INTERVAL_MILLIS = 500L
         private const val STALL_THRESHOLD_MILLIS = 1500L
+        private const val STABLE_STREAK_REQUIRED = 2
     }
 }

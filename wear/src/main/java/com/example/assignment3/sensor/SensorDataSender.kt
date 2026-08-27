@@ -19,19 +19,24 @@ class SensorDataSender(context: Context) {
     private var cachedNodes: List<Node> = emptyList()
     private var cachedAtMillis = 0L
 
-    suspend fun send(type: SensorReadingType, samples: List<SensorSample>) {
-        if (samples.isEmpty()) return
+    /** Returns whether the batch actually reached at least one connected node. */
+    suspend fun send(type: SensorReadingType, samples: List<SensorSample>): Boolean {
+        if (samples.isEmpty()) return true
         val path = DataLayerPaths.pathFor(type)
         val payload = SensorBatchCodec.encode(samples)
-        try {
-            for (node in connectedNodes()) {
+        return try {
+            val nodes = connectedNodes()
+            if (nodes.isEmpty()) return false
+            for (node in nodes) {
                 messageClient.sendMessage(node.id, path, payload).await()
             }
+            true
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Log.w(TAG, "Failed to send $path batch to phone", e)
             cachedNodes = emptyList() // force a fresh lookup next time, in case the node list changed
+            false
         }
     }
 

@@ -5,6 +5,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -132,13 +134,15 @@ private fun StatusColumn(uiState: PhoneSensorUiState, modifier: Modifier = Modif
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         MotionPixelArt(motionState = uiState.motionState)
-        Text(
-            text = uiState.motionState.name,
-            style = MaterialTheme.typography.headlineMedium,
-            fontFamily = CuteFontFamily,
-            fontWeight = FontWeight.Bold,
-            color = Color(0xFF4E342E)
-        )
+        Crossfade(targetState = uiState.motionState, animationSpec = tween(300), label = "motionState") { state ->
+            Text(
+                text = state.name,
+                style = MaterialTheme.typography.headlineMedium,
+                fontFamily = CuteFontFamily,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF4E342E)
+            )
+        }
         if (uiState.isStalled) {
             Text(text = "Receiving data...")
         }
