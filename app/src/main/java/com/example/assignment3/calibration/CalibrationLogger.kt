@@ -1,7 +1,8 @@
-package com.example.assignment3.sensor
+package com.example.assignment3.calibration
 
 import android.content.Context
 import com.example.assignment3.common.SensorReadingType
+import com.example.assignment3.sensor.SensorFeatures
 import java.io.File
 
 data class CalibrationRow(

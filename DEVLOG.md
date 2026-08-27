@@ -2,6 +2,25 @@
 
 A running record of user prompts and Claude's response summaries (≤5 sentences each), in chronological order.
 
+## Current Status (as of Entry 36, 2026-08-27)
+
+**Architecture**: `:wear` (watch) collects accelerometer/gyroscope at 100Hz, batches every 500ms, sends raw samples to `:app` (phone) via the Wearable Data Layer API (`MessageClient`). `:common` holds the shared wire format. Phone computes time-domain features (`SensorFeatureExtractor`) over a 2-second rolling window and classifies motion via `MotionClassifier` (nearest-centroid, 14 features: 7 time-domain stats × accel/gyro).
+
+**Classifier status**: Just recalibrated (Entry 36) to ~83% macro recall, all four classes (STATIC/TAP/SHAKE/WALK) between 78-94% recall — considered good enough by the user; **no further calibration planned for now**. Key lessons baked into the current calibration (see `MotionClassifier.kt`'s doc comment for full detail):
+- Sampling-rate changes invalidate calibration (features like maxJerk/zeroCrossing are rate-sensitive) — recalibrate if the rate ever changes again.
+- Trim "warm-up"/transition moments (quiet lead-in, calm pre-walking) out of calibration recordings — they contaminate the centroid of whatever class they're labeled as.
+- Compute `FEATURE_MEANS`/`FEATURE_STDS` excluding SHAKE (its magnitude is much larger than the other classes and distorts shared normalization if pooled in).
+- A firm/vigorous shake and a very light tap/gentle motion can still be ambiguous — inherent physical overlap, not a bug.
+
+**Known infra fixes already applied** (don't re-diagnose these if symptoms recur — check these first):
+- Both `:app` and `:wear` `SensorViewModel`s run their sensor-processing coroutines on `Dispatchers.Default`, never the main thread (was causing growing backlogs competing with UI recomposition).
+- `:wear`'s `SensorDataSender.send()` is non-blocking with a per-sensor `Mutex.tryLock()` guard (drops a batch rather than queuing concurrently if a previous send is still in flight).
+- If "Receiving data..." stalling or wild delays recur, check whether Android Studio has an active Run/Debug session attached to the watch first — its deploy tooling (`studio.deploy`) force-stopping/redeploying the app has been the culprit multiple times. Just having the IDE open is fine; an attached session is not.
+
+**Next planned work**: final UI polish (the user's own words when starting a new session for this).
+
+**Useful reference**: calibration CSV lives on-device at `/storage/emulated/0/Android/data/com.example.assignment3/files/calibration_log.csv` (pull via `adb pull`); `CalibrationLogger`/the on-screen recording buttons are still wired up in case more calibration is ever needed.
+
 ---
 
 ## Entry 1 — 2026-08-24

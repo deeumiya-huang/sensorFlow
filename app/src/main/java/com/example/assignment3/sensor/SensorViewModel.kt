@@ -3,6 +3,8 @@ package com.example.assignment3.sensor
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.assignment3.calibration.CalibrationLogger
+import com.example.assignment3.calibration.CalibrationRow
 import com.example.assignment3.common.SensorReadingType
 import com.example.assignment3.common.SensorSample
 import kotlinx.coroutines.Dispatchers
