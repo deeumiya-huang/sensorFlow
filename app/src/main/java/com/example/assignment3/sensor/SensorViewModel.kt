@@ -12,6 +12,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlin.math.sqrt
 
@@ -127,10 +128,32 @@ class SensorViewModel(
                     // just to know when the displayed state flips.
                     launch(Dispatchers.Default) { motionStateSender.send(stableMotionState) }
                 }
-                _uiState.value = updated.copy(
-                    motionState = stableMotionState,
-                    recordedRowCount = pendingRows.size
-                )
+
+                // Re-applies this batch's already-computed fields onto
+                // whatever is actually live at commit time (via `update`'s
+                // CAS retry), instead of blindly overwriting with `updated`
+                // (built from the `current` snapshot taken above) — so a
+                // concurrent writer, like the stall ticker below, can't have
+                // its change silently discarded if it lands in between.
+                _uiState.update { latest ->
+                    val merged = when (batch.type) {
+                        SensorReadingType.ACCELEROMETER -> latest.copy(
+                            receivedBatchCount = latest.receivedBatchCount + 1,
+                            accelerometerFeatures = updated.accelerometerFeatures,
+                            accelerometerMagnitudeHistory = updated.accelerometerMagnitudeHistory,
+                            accelerometerSmoothedHistory = updated.accelerometerSmoothedHistory,
+                            isStalled = false
+                        )
+                        SensorReadingType.GYROSCOPE -> latest.copy(
+                            receivedBatchCount = latest.receivedBatchCount + 1,
+                            gyroscopeFeatures = updated.gyroscopeFeatures,
+                            gyroscopeMagnitudeHistory = updated.gyroscopeMagnitudeHistory,
+                            gyroscopeSmoothedHistory = updated.gyroscopeSmoothedHistory,
+                            isStalled = false
+                        )
+                    }
+                    merged.copy(motionState = stableMotionState, recordedRowCount = pendingRows.size)
+                }
             }
         }
 
@@ -140,9 +163,33 @@ class SensorViewModel(
             while (true) {
                 delay(STALL_CHECK_INTERVAL_MILLIS)
                 val stalled = System.currentTimeMillis() - lastBatchAtMillis > STALL_THRESHOLD_MILLIS
-                if (stalled != _uiState.value.isStalled) {
-                    _uiState.value = _uiState.value.copy(isStalled = stalled)
+                _uiState.update { latest ->
+                    when {
+                        stalled == latest.isStalled -> latest
+                        stalled -> {
+                            // Stale data stopped arriving, so the displayed
+                            // state shouldn't keep showing whatever it last
+                            // classified — that would read as "still live"
+                            // when it isn't.
+                            pendingMotionState = null
+                            pendingMotionStreak = 0
+                            latest.copy(isStalled = true, motionState = MotionState.UNKNOWN)
+                        }
+                        else -> latest.copy(isStalled = false)
+                    }
                 }
+            }
+        }
+
+        // Motion state is otherwise only pushed to the watch on change, which
+        // can go long stretches without firing — not frequent enough for the
+        // watch to tell "phone app died" from "state just hasn't changed."
+        // This periodic resend doubles as a liveness heartbeat: the watch
+        // derives its own stall signal from how recently one last arrived.
+        viewModelScope.launch(Dispatchers.Default) {
+            while (true) {
+                delay(MOTION_STATE_HEARTBEAT_MILLIS)
+                motionStateSender.send(_uiState.value.motionState)
             }
         }
     }
@@ -150,11 +197,11 @@ class SensorViewModel(
     fun startRecording(label: String) {
         sessionId += 1
         pendingRows.clear()
-        _uiState.value = _uiState.value.copy(recordingLabel = label, recordedRowCount = 0)
+        _uiState.update { it.copy(recordingLabel = label, recordedRowCount = 0) }
     }
 
     fun stopRecording() {
-        _uiState.value = _uiState.value.copy(recordingLabel = null)
+        _uiState.update { it.copy(recordingLabel = null) }
         if (pendingRows.isNotEmpty()) {
             val rowsToWrite = pendingRows.toList()
             pendingRows.clear()
@@ -175,5 +222,6 @@ class SensorViewModel(
         private const val STALL_CHECK_INTERVAL_MILLIS = 500L
         private const val STALL_THRESHOLD_MILLIS = 1500L
         private const val STABLE_STREAK_REQUIRED = 2
+        private const val MOTION_STATE_HEARTBEAT_MILLIS = 1000L
     }
 }

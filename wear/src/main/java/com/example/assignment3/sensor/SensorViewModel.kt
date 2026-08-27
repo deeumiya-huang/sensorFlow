@@ -11,6 +11,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 
@@ -34,6 +35,14 @@ class SensorViewModel(context: Context) : ViewModel() {
     private val gyroscopeSendMutex = Mutex()
     private var lastSendSuccessAtMillis = System.currentTimeMillis()
 
+    // sendMessage() only confirms the message reached the paired device, not
+    // that a live app on the other end consumed it — a dead phone app still
+    // lets sends "succeed", so lastSendSuccessAtMillis alone can't detect
+    // that. This tracks the phone's periodic motion-state heartbeat instead,
+    // which only keeps arriving while the phone app is actually alive and
+    // receiving from us — the same kind of signal :app's own isStalled uses.
+    private var lastMotionStateReceivedAtMillis = System.currentTimeMillis()
+
     init {
         // Only the batching + send pipelines run now — the screen no longer
         // mirrors every raw 100Hz reading (it used to, via a separate
@@ -54,18 +63,26 @@ class SensorViewModel(context: Context) : ViewModel() {
         }
         viewModelScope.launch(Dispatchers.Default) {
             motionStateReceiver.motionStates.collect { state ->
-                _uiState.value = _uiState.value.copy(motionState = state)
+                lastMotionStateReceivedAtMillis = System.currentTimeMillis()
+                _uiState.update { it.copy(motionState = state) }
             }
         }
-        // sendMessage is fire-and-forget with no delivery ack, so this
-        // ticker is the only way to notice the phone link has gone quiet —
-        // mirrors :app's own isStalled ticker (same threshold/interval).
+        // Stalled if EITHER our own sends have stopped succeeding (can't
+        // reach the phone at all) OR the phone's heartbeat has gone quiet
+        // (reachable, but nothing alive on the other end) — the two catch
+        // different failure modes, neither implies the other.
         viewModelScope.launch(Dispatchers.Default) {
             while (true) {
                 delay(STALL_CHECK_INTERVAL_MILLIS)
-                val stalled = System.currentTimeMillis() - lastSendSuccessAtMillis > STALL_THRESHOLD_MILLIS
-                if (stalled != _uiState.value.isConnectionStalled) {
-                    _uiState.value = _uiState.value.copy(isConnectionStalled = stalled)
+                val now = System.currentTimeMillis()
+                val stalled = now - lastSendSuccessAtMillis > STALL_THRESHOLD_MILLIS ||
+                    now - lastMotionStateReceivedAtMillis > STALL_THRESHOLD_MILLIS
+                _uiState.update { latest ->
+                    when {
+                        stalled == latest.isConnectionStalled -> latest
+                        stalled -> latest.copy(isConnectionStalled = true, motionState = WatchMotionState.UNKNOWN)
+                        else -> latest.copy(isConnectionStalled = false)
+                    }
                 }
             }
         }
