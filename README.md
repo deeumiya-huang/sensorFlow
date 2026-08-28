@@ -4,10 +4,14 @@ SensorFlow is a distributed Android application that performs real-time motion c
 
 ## 📺 Demo
 
+### Device Pairing
 ![Watch-Phone Pairing](media/pair.jpg)
 *Figure 1: Demonstration of the seamless connection between the Wear OS device and the handheld mobile app.*
 
-![Demo Video](media/demo.mp4)
+### Real-time Classification
+<video src="media/demo.mp4" width="100%" controls>
+  Your browser does not support the video tag.
+</video>
 *Video 1: Real-time classification of the four motion states (Static, Tap, Shake, and Walk) as performed on the watch and reflected on the phone UI.*
 
 ---
