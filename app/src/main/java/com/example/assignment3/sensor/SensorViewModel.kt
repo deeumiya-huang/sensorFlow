@@ -3,8 +3,7 @@ package com.example.assignment3.sensor
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.assignment3.calibration.CalibrationLogger
-import com.example.assignment3.calibration.CalibrationRow
+import com.example.assignment3.calibration.CalibrationRecorder
 import com.example.assignment3.common.SensorReadingType
 import com.example.assignment3.common.SensorSample
 import kotlinx.coroutines.Dispatchers
@@ -26,6 +25,10 @@ data class PhoneSensorUiState(
     val gyroscopeSmoothedHistory: List<Float> = emptyList(),
     val motionState: MotionState = MotionState.UNKNOWN,
     val isStalled: Boolean = false,
+    // Calibration-recording status (STATIC/TAP/SHAKE/WALK label logging used
+    // to derive MotionClassifier's thresholds — see CalibrationRecorder).
+    // Compose has to observe these directly, so unlike the rest of that
+    // logic they can't move out of this state class with it.
     val recordingLabel: String? = null,
     val recordedRowCount: Int = 0
 )
@@ -42,8 +45,7 @@ class SensorViewModel(
     private val _uiState = MutableStateFlow(PhoneSensorUiState())
     val uiState: StateFlow<PhoneSensorUiState> = _uiState.asStateFlow()
 
-    private var sessionId = 0
-    private val pendingRows = mutableListOf<CalibrationRow>()
+    private val calibrationRecorder = CalibrationRecorder()
     private var lastBatchAtMillis = System.currentTimeMillis()
 
     // A raw per-batch classification flickers whenever features sit near a
@@ -112,9 +114,8 @@ class SensorViewModel(
                     SensorReadingType.ACCELEROMETER -> updated.accelerometerFeatures
                     SensorReadingType.GYROSCOPE -> updated.gyroscopeFeatures
                 }
-                val label = current.recordingLabel
-                if (label != null && latestFeatures != null) {
-                    pendingRows.add(CalibrationRow(sessionId, label, batch.type, latestFeatures))
+                if (latestFeatures != null) {
+                    calibrationRecorder.record(batch.type, latestFeatures)
                 }
 
                 val rawMotionState = MotionClassifier.classify(
@@ -152,7 +153,7 @@ class SensorViewModel(
                             isStalled = false
                         )
                     }
-                    merged.copy(motionState = stableMotionState, recordedRowCount = pendingRows.size)
+                    merged.copy(motionState = stableMotionState, recordedRowCount = calibrationRecorder.recordedRowCount)
                 }
             }
         }
@@ -194,21 +195,17 @@ class SensorViewModel(
         }
     }
 
+    // Calibration recording, kept for re-deriving MotionClassifier's
+    // thresholds if more labeled data is ever needed again — not wired into
+    // the UI right now (see CalibrationControls).
     fun startRecording(label: String) {
-        sessionId += 1
-        pendingRows.clear()
+        calibrationRecorder.start(label)
         _uiState.update { it.copy(recordingLabel = label, recordedRowCount = 0) }
     }
 
     fun stopRecording() {
+        calibrationRecorder.stopAndFlush(viewModelScope, appContext)
         _uiState.update { it.copy(recordingLabel = null) }
-        if (pendingRows.isNotEmpty()) {
-            val rowsToWrite = pendingRows.toList()
-            pendingRows.clear()
-            viewModelScope.launch(Dispatchers.IO) {
-                CalibrationLogger.append(appContext, rowsToWrite)
-            }
-        }
     }
 
     private fun magnitudesOf(samples: List<SensorSample>): List<Float> =
