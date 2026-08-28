@@ -44,13 +44,10 @@ class SensorViewModel(context: Context) : ViewModel() {
     private var lastMotionStateReceivedAtMillis = System.currentTimeMillis()
 
     init {
-        // Only the batching + send pipelines run now — the screen no longer
-        // mirrors every raw 100Hz reading (it used to, via a separate
-        // collector straight into _uiState), since the display now only
-        // shows the phone's classified state and a connection light,
-        // neither of which needs per-sample updates. That removes the
-        // ~100/sec recomposition cost entirely rather than just throttling
-        // it.
+        // Only the batching + send pipelines run — the screen shows the
+        // phone's classified state and a connection light, neither of which
+        // needs per-sample updates, so nothing here feeds raw 100Hz readings
+        // into Compose-observed state.
         viewModelScope.launch(Dispatchers.Default) {
             repository.accelerometer.chunkedByTime(BATCH_WINDOW_MILLIS).collect { batch ->
                 sendNonBlocking(accelerometerSendMutex, SensorReadingType.ACCELEROMETER, batch.map { it.toSample() })

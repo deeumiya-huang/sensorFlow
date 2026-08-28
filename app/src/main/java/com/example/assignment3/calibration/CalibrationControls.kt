@@ -10,9 +10,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
 /**
- * STATIC/TAP/SHAKE/WALK calibration-recording controls, extracted out of the
- * main screen (not wired in there anymore) so it's ready to reuse if more
- * calibration is ever needed — see [CalibrationLogger].
+ * STATIC/TAP/SHAKE/WALK calibration-recording controls. Not currently wired
+ * into the main screen — kept ready to reuse if more calibration is ever
+ * needed, see [CalibrationLogger].
  */
 @Composable
 fun CalibrationControls(

@@ -15,8 +15,8 @@ import kotlinx.coroutines.flow.shareIn
 
 /**
  * [scope] backs the shared, hot sensor flows below (via [shareIn]) so that
- * multiple collectors (live UI display, batching for transmission, ...) share
- * a single SensorEventListener per sensor instead of each registering its own.
+ * multiple collectors can share a single SensorEventListener per sensor
+ * instead of each registering its own.
  */
 class SensorRepository(context: Context, scope: CoroutineScope) {
 

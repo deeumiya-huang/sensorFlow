@@ -5,8 +5,8 @@ object DataLayerPaths {
     const val GYROSCOPE_BATCH = "/sensor/gyroscope"
 
     // Phone -> watch: the classified motion state, sent as the state name's
-    // raw UTF-8 bytes (e.g. "WALK"). One-way, low-frequency (only on change),
-    // so it doesn't need SensorBatchCodec's binary framing.
+    // raw UTF-8 bytes (e.g. "WALK"). One-way and infrequent, so it doesn't
+    // need SensorBatchCodec's binary framing.
     const val MOTION_STATE = "/motion/state"
 
     fun pathFor(type: SensorReadingType): String = when (type) {

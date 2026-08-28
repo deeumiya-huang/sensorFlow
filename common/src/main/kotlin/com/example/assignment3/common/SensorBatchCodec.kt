@@ -13,9 +13,7 @@ object SensorBatchCodec {
 
     fun encode(samples: List<SensorSample>): ByteArray {
         val buffer = ByteBuffer.allocate( BYTE_FOR_HEADER + samples.size * BYTES_PER_SAMPLE)
-        // put the sample size into the 4 bytes of header
         buffer.putInt(samples.size)
-        // put all samples into buffer
         for (sample in samples) {
             buffer.putFloat(sample.x)
             buffer.putFloat(sample.y)

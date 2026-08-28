@@ -11,7 +11,7 @@ import kotlinx.coroutines.tasks.await
 /**
  * Fire-and-forget push of the classified motion state to the watch, so its
  * small screen can show what the phone decided instead of raw sensor
- * numbers. Only sent on change (see [SensorViewModel]), so this mirrors
+ * numbers (see [SensorViewModel] for when this is called). Mirrors
  * :wear's SensorDataSender's node-caching approach without needing to share
  * code across modules for one tiny one-way message.
  */

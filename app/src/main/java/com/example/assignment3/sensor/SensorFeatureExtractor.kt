@@ -18,9 +18,8 @@ object SensorFeatureExtractor {
 
     private const val SMOOTHING_WINDOW = 5
 
-    // Placeholder until Step C's on-device measurements tell us the real
-    // sensor noise floor; suppresses crossings caused by noise jittering
-    // right at the baseline rather than genuine motion.
+    // Suppresses crossings caused by sensor noise jittering right at the
+    // baseline rather than genuine motion.
     private const val DEFAULT_CROSSING_EPSILON = 0.05f
 
     /**
