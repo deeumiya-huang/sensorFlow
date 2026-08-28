@@ -17,8 +17,10 @@ import kotlinx.coroutines.tasks.await
  */
 class MotionStateSender(context: Context) {
 
-    private val messageClient = Wearable.getMessageClient(context)
-    private val nodeClient = Wearable.getNodeClient(context)
+    // Narrowed to applicationContext since these are retained for the whole
+    // ViewModel lifetime — an Activity context here would leak the Activity.
+    private val messageClient = Wearable.getMessageClient(context.applicationContext)
+    private val nodeClient = Wearable.getNodeClient(context.applicationContext)
 
     private var cachedNodes: List<Node> = emptyList()
     private var cachedAtMillis = 0L
